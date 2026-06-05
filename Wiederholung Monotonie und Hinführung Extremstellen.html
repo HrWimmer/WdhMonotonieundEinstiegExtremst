@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Extremstellen Erforschen</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; }
+        .math { font-family: 'Times New Roman', serif; font-style: italic; font-size: 1.1em; }
+        .hidden-step { display: none !important; }
+        .active-step { display: block; animation: fadeIn 0.5s ease-in-out; }
+        
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .region-none { fill: transparent; cursor: pointer; }
+        .region-up { fill: rgba(34, 197, 94, 0.2); cursor: pointer; }
+        .region-down { fill: rgba(239, 68, 68, 0.2); cursor: pointer; }
+        
+        .fence-line { stroke: #f97316; stroke-width: 4; cursor: ew-resize; stroke-dasharray: 8,4; }
+        .fence-grip { fill: #f97316; cursor: ew-resize; rx: 5; ry: 5; }
+        
+        .tangent-line { stroke-width: 2; }
+        .tangent-point { fill: #10b981; cursor: grab; }
+        .tangent-point:active { cursor: grabbing; }
+
+        .der-cross { stroke: #9333ea; stroke-width: 3; cursor: ns-resize; }
+        
+        /* Custom Scrollbar for right pane */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="bg-slate-50 h-screen flex flex-col md:flex-row">
+
+    <!-- LINKS: Interaktives Labor (Fixiert) -->
+    <div class="w-full md:w-1/2 h-[45vh] md:h-full flex flex-col items-center justify-center bg-white border-r border-slate-200 p-4 relative shadow-lg z-10">
+        <h2 class="text-2xl font-bold text-slate-800 mb-2">Mathe-Labor</h2>
+        <div id="graph-container" class="w-full max-w-[500px] aspect-square relative touch-none"></div>
+        <div id="live-data" class="mt-4 text-sm font-mono bg-slate-100 px-4 py-2 rounded border border-slate-300 text-center w-full max-w-[500px] min-h-[40px]">
+            Labor inaktiv. Löse zunächst Schritt 1!
+        </div>
+    </div>
+
+    <!-- RECHTS: Assistenz & Aufgaben (Scrollbar) -->
+    <div class="w-full md:w-1/2 h-[55vh] md:h-full overflow-y-auto p-4 md:p-10 bg-slate-50" id="right-pane">
+        <div class="max-w-xl mx-auto pb-24">
+            
+            <!-- KAPITEL NAVIGATION -->
+            <div id="step-nav" class="flex flex-wrap gap-2 mb-6 pb-4 border-b border-slate-300">
+                <!-- Buttons werden per JS generiert -->
+            </div>
+
+            <!-- SCHRITT 1 -->
+            <div id="step-1" class="step-card active-step bg-white p-6 rounded-xl shadow-sm border-t-4 border-blue-500 mb-6">
+                <h3 class="text-xl font-bold mb-3 text-blue-600">Schritt 1: Das Monotonie-Spiel</h3>
+                <p class="mb-4 text-slate-700">Im Graphen siehst du die Funktion <span class="math">f(x)</span>. Bevor wir neue Begriffe lernen, reaktivieren wir dein Wissen zur Monotonie.</p>
+                <ul class="list-disc pl-5 mb-4 text-slate-700 space-y-2">
+                    <li>Ziehe die <strong>orangenen Zäune</strong> exakt auf die x-Werte, an denen sich das Steigungsverhalten (die Monotonie) ändert (die "Gipfel" und "Täler").</li>
+                    <li><strong>Klicke danach in die drei entstandenen Bereiche</strong> im Graphen, um sie einzufärben: <br>1x Klick = <span class="text-green-600 font-bold">Steigend</span>, 2x Klick = <span class="text-red-600 font-bold">Fallend</span>.</li>
+                </ul>
+                <div id="feedback-1" class="hidden mb-4 p-3 rounded text-sm font-semibold"></div>
+                <button onclick="checkStep1()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded shadow transition-colors">Überprüfen</button>
+            </div>
+
+            <!-- SCHRITT 2 -->
+            <div id="step-2" class="step-card hidden-step bg-white p-6 rounded-xl shadow-sm border-t-4 border-indigo-500 mb-6">
+                <h3 class="text-xl font-bold mb-3 text-indigo-600">Schritt 2: Der Gipfel</h3>
+                <p class="mb-4 text-slate-700">Super! Du hast das Labor freigeschaltet. Bewege nun den <strong>Punkt auf der Kurve</strong>, um die Tangente (Berührgerade) zu verschieben. Achte auf die Farbe der Tangente!</p>
+                <p class="mb-4 font-semibold text-slate-800">Was gilt am Gipfelpunkt bei <span class="math">x = -1</span>?</p>
+                <div class="space-y-3 mb-4" id="mc-2">
+                    <label class="flex items-start gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-200">
+                        <input type="checkbox" value="1" class="mt-1 w-4 h-4">
+                        <span>Die Steigung der Tangente ist dort genau 0.</span>
+                    </label>
+                    <label class="flex items-start gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-200">
+                        <input type="checkbox" value="2" class="mt-1 w-4 h-4">
+                        <span>Links vom Gipfel ist die Tangente grün (steigend), rechts davon rot (fallend).</span>
+                    </label>
+                    <label class="flex items-start gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-200">
+                        <input type="checkbox" value="3" class="mt-1 w-4 h-4">
+                        <span>Die Funktion hat dort einen y-Wert von 0.</span>
+                    </label>
+                </div>
+                <div id="feedback-2" class="hidden mb-4 p-3 rounded text-sm font-semibold"></div>
+                <button onclick="checkStep2()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded shadow transition-colors">Antworten prüfen</button>
+            </div>
+
+            <!-- SCHRITT 3 -->
+            <div id="step-3" class="step-card hidden-step bg-white p-6 rounded-xl shadow-sm border-t-4 border-purple-500 mb-6">
+                <h3 class="text-xl font-bold mb-3 text-purple-600">Schritt 3: Die Ableitung konstruieren</h3>
+                <p class="mb-4 text-slate-700">Du weißt bereits: Die Ableitungsfunktion <span class="math">f'(x)</span> gibt an jeder Stelle die Steigung der Tangente an.</p>
+                <p class="mb-4 text-slate-700"><strong>Aufgabe:</strong> Ziehe die <span class="text-purple-600 font-bold">lila Kreuze</span> vertikal auf den y-Wert, der der Steigung an dieser Stelle entspricht! <br><span class="text-sm italic">(Tipp: Schiebe die Tangente dorthin, lies die Steigung unten ab und ziehe das Kreuz auf diese Höhe.)</span></p>
+                
+                <div id="feedback-3" class="hidden mb-4 p-3 rounded text-sm font-semibold"></div>
+                <button onclick="checkStep3()" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded shadow transition-colors mb-2">Punkte überprüfen</button>
+                <button id="btn-solve-3" onclick="solveStep3()" class="hidden w-full bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2 px-4 rounded shadow transition-colors">💡 Automatisch lösen</button>
+            </div>
+
+            <!-- SCHRITT 4 -->
+            <div id="step-4" class="step-card hidden-step bg-white p-6 rounded-xl shadow-sm border-t-4 border-amber-500 mb-6">
+                <h3 class="text-xl font-bold mb-3 text-amber-600">Schritt 4: Die Eintrittskarte</h3>
+                <p class="mb-4 text-slate-700">Wir haben nun die lila Ableitungsfunktion sichtbar gemacht. Wir nennen die Gipfel und Täler ab jetzt mathematisch korrekt <strong>Extremstellen</strong> (Hoch- und Tiefpunkte).</p>
+                <p class="mb-4 font-semibold">Betrachte die Extremstellen bei <span class="math">x = -1</span> und <span class="math">x = 1</span>. Was fällt an der lila Ableitungsfunktion dort auf?</p>
+                <div class="space-y-3 mb-4" id="mc-4">
+                    <label class="flex items-start gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-200">
+                        <input type="checkbox" value="1" class="mt-1 w-4 h-4">
+                        <span>Die lila Funktion hat dort ihren höchsten Punkt.</span>
+                    </label>
+                    <label class="flex items-start gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-200">
+                        <input type="checkbox" value="2" class="mt-1 w-4 h-4">
+                        <span>Die lila Funktion schneidet dort die x-Achse (Nullstelle).</span>
+                    </label>
+                    <label class="flex items-start gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-200">
+                        <input type="checkbox" value="3" class="mt-1 w-4 h-4">
+                        <span>Es gilt dort <span class="math">f'(x) = 0</span>.</span>
+                    </label>
+                </div>
+                <div class="bg-amber-50 border-l-4 border-amber-400 p-3 mb-4 text-sm text-slate-700">
+                    <strong>Die Notwendige Bedingung:</strong> Damit an einer Stelle überhaupt ein Extrempunkt existieren <i>kann</i>, muss die Steigung null sein. Das ist wie eine Eintrittskarte zum Stadion.
+                </div>
+                <div id="feedback-4" class="hidden mb-4 p-3 rounded text-sm font-semibold"></div>
+                <button onclick="checkStep4()" class="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded shadow transition-colors">Antworten prüfen</button>
+            </div>
+
+            <!-- SCHRITT 5 -->
+            <div id="step-5" class="step-card hidden-step bg-white p-6 rounded-xl shadow-sm border-t-4 border-rose-500 mb-6">
+                <h3 class="text-xl font-bold mb-3 text-rose-600">Schritt 5: Reicht die Eintrittskarte?</h3>
+                <p class="mb-4 text-slate-700">Wir wissen: An einem Extrempunkt <i>muss</i> die Ableitung null sein. Aber bedeutet eine Nullstelle der Ableitung auch <i>automatisch</i>, dass wir einen Extrempunkt haben?</p>
+                
+                <button id="btn-saddle" onclick="toggleSaddle()" class="mb-3 w-full bg-rose-500 hover:bg-rose-600 text-white font-bold py-2 px-4 rounded shadow transition-colors">
+                    🕵️‍♂️ Klicke hier für eine Gegenprobe!
+                </button>
+                <p id="saddle-text" class="hidden text-sm italic text-slate-600 mb-4 bg-slate-100 p-3 rounded">Betrachte die neue Funktion bei <span class="math">x = 0</span>. Die Tangente ist kurz waagrecht (<span class="math">f'(0)=0</span>), aber es ist kein Gipfel/Tal! Die Funktion "verschnauft" nur und steigt weiter. Das nennt man <strong>Sattelpunkt</strong>.</p>
+
+                <p class="mb-4 font-semibold">Was muss <strong>zusätzlich</strong> passieren, damit wir uns 100% sicher sein können, dass ein Extrempunkt vorliegt (der Beweis)?</p>
+                <div class="space-y-3 mb-4" id="mc-5">
+                    <label class="flex items-start gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-200">
+                        <input type="checkbox" value="1" class="mt-1 w-4 h-4">
+                        <span>Die Ursprungsfunktion muss die x-Achse schneiden.</span>
+                    </label>
+                    <label class="flex items-start gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-200">
+                        <input type="checkbox" value="2" class="mt-1 w-4 h-4">
+                        <span>Die Ableitungsfunktion (lila) muss das Vorzeichen wechseln (von + nach - oder umgekehrt).</span>
+                    </label>
+                    <label class="flex items-start gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-200">
+                        <input type="checkbox" value="3" class="mt-1 w-4 h-4">
+                        <span>Die Monotonie der Originalfunktion muss sich ändern (erst steigen, dann fallen oder umgekehrt).</span>
+                    </label>
+                </div>
+                <div id="feedback-5" class="hidden mb-4 p-3 rounded text-sm font-semibold"></div>
+                <button onclick="checkStep5()" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-2 px-4 rounded shadow transition-colors">Antworten prüfen</button>
+            </div>
+
+            <!-- SCHRITT 6 -->
+            <div id="step-6" class="step-card hidden-step bg-white p-6 rounded-xl shadow-sm border-t-4 border-emerald-500 mb-6">
+                <h3 class="text-xl font-bold mb-3 text-emerald-600">Zusammenfassung: Der Hefteintrag</h3>
+                <div class="bg-emerald-50 p-4 rounded-lg border border-emerald-200 text-slate-800 space-y-3">
+                    <p>Für eine lokale Extremstelle an der Stelle <span class="math">x_0</span> gilt:</p>
+                    <ol class="list-decimal pl-5 space-y-2">
+                        <li><strong>Notwendige Bedingung (Eintrittskarte):</strong><br>
+                        Die erste Ableitung muss null sein: <span class="math">f'(x_0) = 0</span>.</li>
+                        <li><strong>Hinreichende Bedingung (Der Beweis):</strong><br>
+                        Die Ableitung <span class="math">f'</span> muss an der Stelle <span class="math">x_0</span> das Vorzeichen wechseln.<br>
+                        <span class="text-sm">➔ VZW von + nach - : <strong>Hochpunkt</strong> (erst steigen, dann fallen)</span><br>
+                        <span class="text-sm">➔ VZW von - nach + : <strong>Tiefpunkt</strong> (erst fallen, dann steigen)</span>
+                        </li>
+                    </ol>
+                    <p class="text-sm italic mt-2 text-slate-600">Ist <span class="math">f'(x_0) = 0</span>, aber es gibt keinen Vorzeichenwechsel, liegt ein <strong>Sattelpunkt</strong> vor.</p>
+                </div>
+                <button onclick="goToStep(7)" class="mt-6 w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded shadow-lg transition-colors text-lg">
+                    🏁 Zum Endlos-Trainer
+                </button>
+            </div>
+
+            <!-- SCHRITT 7: ENDLOSTRAINER -->
+            <div id="step-7" class="step-card hidden-step bg-white p-6 rounded-xl shadow-sm border-t-4 border-cyan-500 mb-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-bold text-cyan-600">Endlos-Trainer</h3>
+                    <span id="trainer-counter" class="bg-cyan-100 text-cyan-800 text-xs font-bold px-3 py-1 rounded-full">Fragen gelöst: 0</span>
+                </div>
+                <p class="mb-4 text-slate-700 text-sm">Teste dein Wissen! Es können <strong>keine, eine, mehrere oder alle</strong> Antworten richtig sein.</p>
+                
+                <div id="trainer-question-container" class="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-4">
+                    <p id="trainer-q-text" class="font-semibold text-slate-800 mb-4"></p>
+                    <div id="trainer-options" class="space-y-2">
+                        <!-- Generiert über JS -->
+                    </div>
+                </div>
+
+                <div id="trainer-feedback" class="hidden mb-4 p-4 rounded text-sm"></div>
+                
+                <button id="btn-check-trainer" onclick="checkTrainer()" class="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded shadow transition-colors">Antworten prüfen</button>
+                <button id="btn-next-trainer" onclick="nextTrainerQuestion()" class="hidden w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-2 px-4 rounded shadow transition-colors">Nächste Frage</button>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // --- Mathematik & Funktionen ---
+        const fNormal = (x) => x*x*x - 3*x;
+        const fPrimeNormal = (x) => 3*x*x - 3;
+        
+        const fSaddle = (x) => x*x*x;
+        const fPrimeSaddle = (x) => 3*x*x;
+
+        let f = fNormal;
+        let fPrime = fPrimeNormal;
+
+        // --- State Management ---
+        const state = {
+            currentStep: 1,
+            highestStep: 1,
+            fence1: -2.0,
+            fence2: 2.0,
+            regions: [0, 0, 0], // 0: none, 1: up (green), 2: down (red)
+            tangentX: 0,
+            isSaddleMode: false,
+            step1Solved: false,
+            step3Solved: false,
+            derPoints: [-1.5, -1, -0.5, 0, 0.5, 1, 1.5].map(x => ({x: x, y: 0}))
+        };
+
+        // --- D3 Setup ---
+        const container = document.getElementById('graph-container');
+        const width = 500;
+        const height = 500;
+        const margin = {top: 20, right: 20, bottom: 40, left: 40};
+        const innerWidth = width - margin.left - margin.right;
+        const innerHeight = height - margin.top - margin.bottom;
+
+        const svg = d3.select("#graph-container")
+            .append("svg")
+            .attr("viewBox", `0 0 ${width} ${height}`)
+            .attr("width", "100%")
+            .attr("height", "100%");
+
+        const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+        const xScale = d3.scaleLinear().domain([-4, 4]).range([0, innerWidth]);
+        const yScale = d3.scaleLinear().domain([-4, 4]).range([innerHeight, 0]);
+
+        // Achsen & Gitter
+        const xAxis = d3.axisBottom(xScale).ticks(8);
+        const yAxis = d3.axisLeft(yScale).ticks(8);
+        
+        // Gitterlinien (Echtes Karomuster über das ganze Feld)
+        g.append("g").attr("class", "grid").attr("transform", `translate(0,${innerHeight})`).style("opacity", 0.15).call(d3.axisBottom(xScale).ticks(16).tickSize(-innerHeight).tickFormat(""));
+        g.append("g").attr("class", "grid").attr("transform", `translate(0,0)`).style("opacity", 0.15).call(d3.axisLeft(yScale).ticks(16).tickSize(-innerWidth).tickFormat(""));
+
+        // Achsen zeichnen
+        g.append("g").attr("transform", `translate(0,${yScale(0)})`).call(xAxis);
+        g.append("g").attr("transform", `translate(${xScale(0)},0)`).call(yAxis);
+
+        // Layer-Hierarchie (wichtig für Klick-Reihenfolge)
+        const regionsGroup = g.append("g").attr("id", "regions-layer");
+        const pathGroup = g.append("g").attr("id", "path-layer");
+        const derPathGroup = g.append("g").attr("id", "der-path-layer");
+        const fencesGroup = g.append("g").attr("id", "fences-layer");
+        const interactiveGroup = g.append("g").attr("id", "interactive-layer");
+        const derPointsLayer = g.append("g").attr("id", "der-points-layer").style("opacity", 0);
+
+        // Graphen zeichnen
+        const line = d3.line().x(d => xScale(d)).y(d => yScale(f(d))).curve(d3.curveMonotoneX);
+        const derLine = d3.line().x(d => xScale(d)).y(d => yScale(fPrime(d))).curve(d3.curveMonotoneX);
+        const xValues = d3.range(-4, 4.1, 0.1);
+
+        const funcPath = pathGroup.append("path")
+            .datum(xValues)
+            .attr("class", "func-path")
+            .attr("fill", "none")
+            .attr("stroke", "#2563eb")
+            .attr("stroke-width", 3)
+            .attr("d", line);
+
+        const derPath = derPathGroup.append("path")
+            .datum(xValues)
+            .attr("class", "der-path")
+            .attr("fill", "none")
+            .attr("stroke", "#9333ea")
+            .attr("stroke-width", 3)
+            .attr("stroke-dasharray", "5,5")
+            .attr("d", derLine)
+            .style("opacity", 0); // Zunächst unsichtbar
+
+        // --- Interaktive Elemente ---
+        
+        // 1. Regions (Schritt 1)
+        function initRegionsAndFences() {
+            for (let i = 0; i < 3; i++) {
+                regionsGroup.append("rect")
+                    .attr("id", "region" + i)
+                    .attr("y", 0)
+                    .attr("height", innerHeight)
+                    .on("click", function() {
+                        if (state.currentStep > 1 && state.step1Solved) return; // Gesperrt nach Schritt 1
+                        state.regions[i] = (state.regions[i] + 1) % 3;
+                        updateRegionsAndFences();
+                    });
+            }
+
+            for (let i = 0; i < 2; i++) {
+                const fGroup = fencesGroup.append("g")
+                    .attr("id", "fence" + i)
+                    .style("display", state.isSaddleMode ? "none" : "block");
+
+                fGroup.append("line")
+                    .attr("y1", 0)
+                    .attr("y2", innerHeight)
+                    .attr("class", "fence-line");
+
+                fGroup.append("rect")
+                    .attr("class", "fence-grip")
+                    .attr("x", -20)
+                    .attr("y", innerHeight/2 - 25)
+                    .attr("width", 40)
+                    .attr("height", 50)
+                    .call(d3.drag().on("drag", function(event) {
+                        if (state.currentStep > 1 && state.step1Solved) return;
+                        
+                        // Absolute Mausposition relativ zum Graphen verwenden (verhindert Sprünge)
+                        let pointerX = d3.pointer(event, g.node())[0];
+                        let newX = xScale.invert(pointerX);
+                        
+                        if (i === 0) {
+                            state.fence1 = Math.max(-3.8, Math.min(state.fence2 - 0.5, newX));
+                        } else {
+                            state.fence2 = Math.max(state.fence1 + 0.5, Math.min(3.8, newX));
+                        }
+                        updateRegionsAndFences();
+                    }));
+            }
+        }
+
+        function updateRegionsAndFences() {
+            const xPos = [xScale(-4), xScale(state.fence1), xScale(state.fence2), xScale(4)];
+            
+            for (let i = 0; i < 3; i++) {
+                d3.select("#region" + i)
+                    .attr("x", xPos[i])
+                    .attr("width", xPos[i+1] - xPos[i])
+                    .attr("class", state.regions[i] === 0 ? "region-none" : (state.regions[i] === 1 ? "region-up" : "region-down"));
+            }
+
+            d3.select("#fence0").attr("transform", `translate(${xScale(state.fence1)}, 0)`).style("display", state.isSaddleMode ? "none" : "block");
+            d3.select("#fence1").attr("transform", `translate(${xScale(state.fence2)}, 0)`).style("display", state.isSaddleMode ? "none" : "block");
+        }
+
+        // 2. Tangente (Ab Schritt 2)
+        const tangentGroup = interactiveGroup.append("g").style("opacity", 0);
+        const tLine = tangentGroup.append("line").attr("class", "tangent-line");
+        const tPoint = tangentGroup.append("circle").attr("r", 8).attr("class", "tangent-point");
+        
+        // Touch/Mouse Overlay zum Ziehen der Tangente (erst aktiv wenn Schritt 1 gelöst)
+        const dragOverlay = interactiveGroup.append("rect")
+            .attr("width", innerWidth)
+            .attr("height", innerHeight)
+            .attr("fill", "transparent")
+            .style("pointer-events", "none") // Startet deaktiviert
+            .call(d3.drag().on("drag", function(event) {
+                if (state.currentStep < 2) return;
+                let newX = xScale.invert(event.x);
+                state.tangentX = Math.max(-3.8, Math.min(3.8, newX));
+                drawTangent();
+            }));
+
+        function drawTangent() {
+            const x0 = state.tangentX;
+            const y0 = f(x0);
+            const m = fPrime(x0);
+
+            // Update Text
+            const liveBox = document.getElementById('live-data');
+            if (state.currentStep >= 2) {
+                liveBox.innerHTML = `Position: <strong>x = ${x0.toFixed(2)}</strong> | Steigung: <strong>f'(x) = ${m.toFixed(2)}</strong>`;
+            }
+
+            tPoint.attr("cx", xScale(x0)).attr("cy", yScale(y0));
+
+            const dx = 1.5;
+            const x1 = x0 - dx, y1 = y0 - m * dx;
+            const x2 = x0 + dx, y2 = y0 + m * dx;
+
+            // Farbe der Tangente
+            let strokeColor = "#f97316"; // Orange (waagrecht)
+            if (m > 0.1) strokeColor = "#10b981"; // Grün
+            else if (m < -0.1) strokeColor = "#ef4444"; // Rot
+
+            tLine.attr("x1", xScale(x1)).attr("y1", yScale(y1))
+                 .attr("x2", xScale(x2)).attr("y2", yScale(y2))
+                 .attr("stroke", strokeColor);
+        }
+
+        // 3. Ableitungspunkte (Schritt 3)
+        function drawDerPoints() {
+            derPointsLayer.selectAll("*").remove();
+            
+            state.derPoints.forEach((pt, i) => {
+                const gPt = derPointsLayer.append("g")
+                    .attr("transform", `translate(${xScale(pt.x)}, ${yScale(pt.y)})`)
+                    .call(d3.drag().on("drag", function(event) {
+                        // Absolute Positionierung gegen Sprünge und Blockaden
+                        let pointerY = d3.pointer(event, g.node())[1];
+                        pt.y = yScale.invert(pointerY);
+                        pt.y = Math.max(-4, Math.min(4, pt.y)); // Begrenzen auf neues KOS
+                        d3.select(this).attr("transform", `translate(${xScale(pt.x)}, ${yScale(pt.y)})`);
+                    }));
+
+                // Fettes X
+                gPt.append("line").attr("x1", -8).attr("y1", -8).attr("x2", 8).attr("y2", 8).attr("class", "der-cross");
+                gPt.append("line").attr("x1", -8).attr("y1", 8).attr("x2", 8).attr("y2", -8).attr("class", "der-cross");
+                
+                // Unsichtbarer Griff
+                gPt.append("circle").attr("r", 20).attr("fill", "transparent").attr("cursor", "ns-resize");
+            });
+        }
+
+
+        // --- UI Logik & Navigation ---
+        function renderNav() {
+            const nav = document.getElementById('step-nav');
+            if(!nav) return;
+            nav.innerHTML = '';
+            const titles = ["1. Monotonie", "2. Gipfel", "3. Steigungen", "4. Eintrittskarte", "5. Beweis", "6. Regeln", "7. Trainer"];
+            for (let i = 1; i <= 7; i++) {
+                const btn = document.createElement('button');
+                btn.innerText = titles[i - 1];
+                btn.className = `px-3 py-1 mb-1 text-xs md:text-sm font-semibold rounded-full transition-colors ${
+                    i === state.currentStep ? 'bg-slate-800 text-white shadow' :
+                    i <= state.highestStep ? 'bg-slate-200 text-slate-700 hover:bg-slate-300' :
+                    'bg-slate-100 text-slate-400 cursor-not-allowed opacity-50'
+                }`;
+                if (i <= state.highestStep) {
+                    btn.onclick = () => goToStep(i);
+                }
+                nav.appendChild(btn);
+            }
+        }
+
+        function forceNormalMode() {
+            if (!state.isSaddleMode) return;
+            state.isSaddleMode = false;
+            f = fNormal;
+            fPrime = fPrimeNormal;
+            
+            const btn = document.getElementById("btn-saddle");
+            const txt = document.getElementById("saddle-text");
+            if (btn) {
+                btn.innerHTML = "🕵️‍♂️ Klicke hier für eine Gegenprobe!";
+                btn.className = "mb-3 w-full bg-rose-500 hover:bg-rose-600 text-white font-bold py-2 px-4 rounded shadow transition-colors";
+            }
+            if (txt) txt.classList.add("hidden");
+            
+            derPointsLayer.transition().duration(500).style("opacity", 1);
+            if (state.step1Solved) regionsGroup.transition().duration(500).style("opacity", 1);
+            fencesGroup.selectAll("g").style("display", "block");
+
+            const origLine = d3.line().x(d => xScale(d)).y(d => yScale(f(d))).curve(d3.curveMonotoneX);
+            const origDerLine = d3.line().x(d => xScale(d)).y(d => yScale(fPrime(d))).curve(d3.curveMonotoneX);
+
+            svg.select(".func-path").transition().duration(1000).attr("d", origLine(xValues)).style("stroke", "#2563eb");
+            svg.select(".der-path").transition().duration(1000).attr("d", origDerLine(xValues));
+            drawTangent();
+        }
+
+        function goToStep(step) {
+            if (step > state.highestStep) state.highestStep = step;
+            state.currentStep = step;
+            
+            document.querySelectorAll('.step-card').forEach(el => {
+                el.classList.add('hidden-step'); el.classList.remove('active-step');
+            });
+            
+            const nextEl = document.getElementById(`step-${step}`);
+            if (nextEl) {
+                nextEl.classList.remove('hidden-step'); nextEl.classList.add('active-step');
+                const rightPane = document.getElementById('right-pane');
+                if(rightPane) rightPane.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+            
+            renderNav();
+
+            // Graphen-Zustand anpassen
+            if (step !== 5) forceNormalMode();
+            
+            if (step < 2) {
+                tangentGroup.transition().duration(500).style("opacity", 0);
+                dragOverlay.style("pointer-events", "none");
+                d3.selectAll(".fence-grip").style("display", "block");
+            } else {
+                tangentGroup.transition().duration(500).style("opacity", 1);
+                dragOverlay.style("pointer-events", "all");
+                d3.selectAll(".fence-grip").style("display", "none");
+            }
+
+            if (step < 3) {
+                derPointsLayer.transition().duration(500).style("opacity", 0);
+            } else {
+                if(!state.step3Solved) drawDerPoints();
+                derPointsLayer.transition().duration(500).style("opacity", 1);
+            }
+
+            if (step < 4) {
+                derPath.transition().duration(500).style("opacity", 0);
+            } else if (state.step3Solved) {
+                derPath.transition().duration(500).style("opacity", 1);
+                derPointsLayer.transition().duration(500).style("opacity", 0);
+            }
+            
+            if (step === 7 && questionsAnswered === 0) {
+                nextTrainerQuestion(); // Trainer starten
+            }
+        }
+
+        function showFeedback(step, isCorrect, msg) {
+            const fb = document.getElementById(`feedback-${step}`);
+            fb.classList.remove('hidden');
+            fb.innerHTML = msg;
+            if (isCorrect) {
+                fb.className = "mb-4 p-3 rounded text-sm font-semibold bg-green-100 text-green-800 border border-green-300";
+                setTimeout(() => goToStep(step + 1), 2500);
+            } else {
+                fb.className = "mb-4 p-3 rounded text-sm font-semibold bg-red-100 text-red-800 border border-red-300 animate-pulse";
+            }
+        }
+
+        // --- Check Funktionen ---
+        function checkStep1() {
+            const f1Ok = Math.abs(state.fence1 - (-1)) < 0.2;
+            const f2Ok = Math.abs(state.fence2 - 1) < 0.2;
+            const regOk = state.regions[0] === 1 && state.regions[1] === 2 && state.regions[2] === 1;
+
+            if (f1Ok && f2Ok && regOk) {
+                state.step1Solved = true;
+                showFeedback(1, true, "Hervorragend! Du hast die Monotoniebereiche perfekt identifiziert. Das Labor öffnet sich...");
+            } else if (f1Ok && f2Ok) {
+                showFeedback(1, false, "Die Zäune sitzen perfekt an den Gipfeln und Tälern! Aber du hast vergessen, die Bereiche passend grün (steigend) und rot (fallend) einzufärben.");
+            } else {
+                showFeedback(1, false, "Noch nicht ganz richtig. Die Zäune müssen exakt an den 'Berggipfeln' und 'Talsohlen' stehen.");
+            }
+        }
+
+        function checkStep2() {
+            const boxes = Array.from(document.querySelectorAll('#mc-2 input'));
+            if (boxes[0].checked && boxes[1].checked && !boxes[2].checked) {
+                showFeedback(2, true, "Genau richtig! Die Steigung (und damit die Ableitung) ist dort 0, und die Monotonie wechselt von steigend auf fallend.");
+            } else {
+                showFeedback(2, false, "Überprüfe nochmal. Schiebe den Punkt genau auf den Gipfel und betrachte die Tangente links und rechts davon.");
+            }
+        }
+
+        function checkStep3() {
+            let error = 0;
+            state.derPoints.forEach(pt => {
+                const targetY = fPrime(pt.x);
+                error += Math.abs(pt.y - targetY);
+            });
+            
+            if (error < 2.5) { // Toleranz für alle Punkte zusammen
+                state.step3Solved = true;
+                showFeedback(3, true, "Fantastisch! Du hast die Ableitungsfunktion (lila) korrekt konstruiert.");
+            } else {
+                document.getElementById('btn-solve-3').classList.remove('hidden');
+                showFeedback(3, false, "Einige Kreuze sind noch nicht auf der richtigen Höhe. Nutze die Tangente, um die Steigung am x-Wert abzulesen!");
+            }
+        }
+
+        function solveStep3() {
+            state.derPoints.forEach(pt => pt.y = fPrime(pt.x));
+            drawDerPoints();
+            checkStep3();
+        }
+
+        function checkStep4() {
+            const boxes = Array.from(document.querySelectorAll('#mc-4 input'));
+            if (!boxes[0].checked && boxes[1].checked && boxes[2].checked) {
+                showFeedback(4, true, "Perfekt! Die Ableitung (lila) schneidet die x-Achse. Das bedeutet: f'(x) = 0.");
+            } else {
+                showFeedback(4, false, "Fast. Schau genau auf die x-Werte -1 und 1. Wo verläuft die lila Kurve dort?");
+            }
+        }
+
+        function toggleSaddle() {
+            if (state.isSaddleMode) {
+                // Wenn wir im Sattel-Modus sind, erzwinge den Normal-Modus
+                forceNormalMode();
+            } else {
+                // Wenn wir im Normal-Modus sind, aktiviere den Sattel-Modus
+                state.isSaddleMode = true;
+                f = fSaddle;
+                fPrime = fPrimeSaddle;
+                
+                const btn = document.getElementById("btn-saddle");
+                const txt = document.getElementById("saddle-text");
+                
+                btn.innerHTML = "🔙 Zurück zur normalen Funktion";
+                btn.className = "mb-3 w-full bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded shadow transition-colors";
+                txt.classList.remove("hidden");
+                
+                // Flächen und Punkte ausblenden zur Übersicht
+                derPointsLayer.transition().duration(500).style("opacity", 0);
+                regionsGroup.transition().duration(500).style("opacity", 0);
+                fencesGroup.selectAll("g").style("display", "none");
+
+                const newLine = d3.line().x(d => xScale(d)).y(d => yScale(f(d))).curve(d3.curveMonotoneX);
+                const newDerLine = d3.line().x(d => xScale(d)).y(d => yScale(fPrime(d))).curve(d3.curveMonotoneX);
+
+                svg.select(".func-path").transition().duration(1000).attr("d", newLine(xValues)).style("stroke", "#0ea5e9"); // Anderes Blau
+                svg.select(".der-path").transition().duration(1000).attr("d", newDerLine(xValues));
+                
+                drawTangent();
+            }
+        }
+
+        function checkStep5() {
+            const boxes = Array.from(document.querySelectorAll('#mc-5 input'));
+            if (!boxes[0].checked && boxes[1].checked && boxes[2].checked) {
+                showFeedback(5, true, "Ausgezeichnet! Eine einfache Nullstelle der Ableitung reicht nicht. Es braucht zwingend den Vorzeichenwechsel!");
+            } else {
+                showFeedback(5, false, "Überlege nochmal. Was unterscheidet den Gipfel vom Sattelpunkt in Bezug auf die Monotonie (steigen/fallen)?");
+            }
+        }
+
+        // --- Endlostrainer Logik ---
+        const trainerQuestions = [
+            {
+                q: "Was verrät uns eine <strong>waagrechte Tangente</strong> (also <span class='math'>f'(x_0) = 0</span>) an einer Stelle?",
+                options: [
+                    "Es muss dort zwingend ein Hoch- oder Tiefpunkt sein.",
+                    "Die notwendige Bedingung (Eintrittskarte) für eine Extremstelle ist erfüllt.",
+                    "Es könnte ein Extrempunkt sein, aber auch ein Sattelpunkt.",
+                    "Die Originalfunktion <span class='math'>f(x)</span> hat dort eine Nullstelle."
+                ],
+                correct: [1, 2],
+                explanation: "<span class='math'>f'(x) = 0</span> ist nur die Eintrittskarte (notwendig). Es kann ein Extrempunkt oder ein Sattelpunkt sein. Eine Nullstelle von <span class='math'>f(x)</span> hat nichts mit der Steigung zu tun!",
+                relatedStep: 4
+            },
+            {
+                q: "Welche Eigenschaften gelten für einen <strong>Sattelpunkt (Terrassenpunkt)</strong>?",
+                options: [
+                    "Die Steigung ist dort null (<span class='math'>f'(x_0) = 0</span>).",
+                    "Die Ableitungsfunktion hat dort einen Vorzeichenwechsel.",
+                    "Die Originalfunktion ändert dort nicht ihre Monotonie (steigt weiter oder fällt weiter).",
+                    "Es gibt dort keine waagrechte Tangente."
+                ],
+                correct: [0, 2],
+                explanation: "Ein Sattelpunkt hat eine waagrechte Tangente (<span class='math'>f'(x_0)=0</span>), aber die Funktion steigt (bzw. fällt) danach unverändert weiter. Daher gibt es <strong>keinen</strong> Vorzeichenwechsel in der Ableitung.",
+                relatedStep: 5
+            },
+            {
+                q: "Welche Bedingungen müssen erfüllt sein, damit an einer Stelle <span class='math'>x_0</span> sicher ein <strong>Tiefpunkt</strong> vorliegt?",
+                options: [
+                    "Die Tangente muss waagrecht sein (<span class='math'>f'(x_0) = 0</span>).",
+                    "Die Ableitung wechselt das Vorzeichen von Plus nach Minus.",
+                    "Die Ableitung wechselt das Vorzeichen von Minus nach Plus.",
+                    "Der Graph der Originalfunktion fällt links von <span class='math'>x_0</span> und steigt rechts davon."
+                ],
+                correct: [0, 2, 3],
+                explanation: "Für einen Tiefpunkt muss die Funktion erst fallen (-) und dann steigen (+). Folglich wechselt die Ableitung von Minus nach Plus.",
+                relatedStep: 6
+            },
+            {
+                q: "Wenn die Ableitungsfunktion <span class='math'>f'(x)</span> komplett oberhalb der x-Achse verläuft (also immer positiv ist), dann...",
+                options: [
+                    "...fällt der Graph der Ursprungsfunktion <span class='math'>f(x)</span>.",
+                    "...steigt der Graph der Ursprungsfunktion <span class='math'>f(x)</span> durchgehend.",
+                    "...gibt es keine Extremstellen.",
+                    "...gibt es unendlich viele Hochpunkte."
+                ],
+                correct: [1, 2],
+                explanation: "Ist die Ableitung immer positiv (+), bedeutet das, dass der Ursprungsgraph ununterbrochen steigt. Somit kann es keine Extremstellen geben.",
+                relatedStep: 3
+            },
+            {
+                q: "Ein <strong>Vorzeichenwechsel von + nach -</strong> in der Ableitungsfunktion bedeutet für den Ursprungsgraphen:",
+                options: [
+                    "Es liegt ein Hochpunkt (lokales Maximum) vor.",
+                    "Es liegt ein Tiefpunkt (lokales Minimum) vor.",
+                    "Die Kurve steigt zuerst und fällt danach.",
+                    "Die Kurve schneidet die x-Achse."
+                ],
+                correct: [0, 2],
+                explanation: "Ein VZW der Ableitung von Plus (+) nach Minus (-) bedeutet: Der Originalgraph steigt erst, dann fällt er. Es entsteht also ein Gipfel (Hochpunkt)!",
+                relatedStep: 5
+            },
+            {
+                q: "Wie erkenne ich mathematisch <strong>sicher</strong>, dass ein Gipfel (Hochpunkt) vorliegt?",
+                options: [
+                    "<span class='math'>f'(x_0) = 0</span> und die Ableitung wechselt das Vorzeichen von Plus nach Minus.",
+                    "<span class='math'>f(x_0) = 0</span> an dieser Stelle.",
+                    "<span class='math'>f'(x_0) = 0</span> und die Ableitung wechselt das Vorzeichen von Minus nach Plus.",
+                    "Die Tangente ist dort waagrecht und die Steigung der Funktion ist davor positiv und danach negativ."
+                ],
+                correct: [0, 3],
+                explanation: "Für den sicheren Beweis eines Hochpunkts brauchen wir die Eintrittskarte (<span class='math'>f'(x_0) = 0</span>) UND den VZW von + nach -.",
+                relatedStep: 6
+            },
+            {
+                q: "Welche der folgenden Aussagen zum <strong>Sattelpunkt</strong> sind wahr?",
+                options: [
+                    "Er ist eine Extremstelle (Hoch- oder Tiefpunkt).",
+                    "Er erfüllt die notwendige Bedingung für Extremstellen (<span class='math'>f'(x_0) = 0</span>).",
+                    "Er hat <strong>keinen</strong> Vorzeichenwechsel in der Ableitungsfunktion.",
+                    "Die Ursprungsfunktion fällt vor und nach dem Sattelpunkt, oder sie steigt davor und danach."
+                ],
+                correct: [1, 2, 3],
+                explanation: "Ein Sattelpunkt hat eine waagrechte Tangente (notwendige Bedingung erfüllt), ist aber kein Extrempunkt, da sich die Monotonie nicht ändert.",
+                relatedStep: 5
+            },
+            {
+                q: "Die Funktion <span class='math'>f</span> hat an der Stelle <span class='math'>x = 2</span> einen <strong>Tiefpunkt</strong>. Was gilt dann zwingend?",
+                options: [
+                    "<span class='math'>f'(2) = 0</span>",
+                    "<span class='math'>f(2) = 0</span>",
+                    "Die Ableitungsfunktion <span class='math'>f'</span> schneidet bei <span class='math'>x = 2</span> die x-Achse.",
+                    "Die Ableitungsfunktion <span class='math'>f'</span> wechselt bei <span class='math'>x = 2</span> von positiven zu negativen Werten."
+                ],
+                correct: [0, 2],
+                explanation: "Bei einem Tiefpunkt ist die Tangente waagrecht (<span class='math'>f'(2) = 0</span>). Da der y-Wert der Ableitung dort 0 ist, muss sie die x-Achse schneiden. Der VZW wäre von - nach +.",
+                relatedStep: 6
+            },
+            {
+                q: "Was bedeutet es grafisch für die Ursprungsfunktion <span class='math'>f</span>, wenn <span class='math'>f'(x_0) = 0</span> gilt?",
+                options: [
+                    "Der Graph von <span class='math'>f</span> schneidet an dieser Stelle die x-Achse.",
+                    "Der Graph von <span class='math'>f</span> besitzt dort eine waagrechte Tangente.",
+                    "Die Ableitungsfunktion <span class='math'>f'</span> berührt oder schneidet dort die x-Achse.",
+                    "Dort muss zwingend ein Hoch- oder Tiefpunkt sein."
+                ],
+                correct: [1, 2],
+                explanation: "Wenn die Steigung 0 ist, ist die Tangente waagrecht. Da die Ableitung den y-Wert 0 annimmt, liegt ihr Graph auf der x-Achse. Es muss aber kein Extrempunkt sein (z.B. Sattelpunkt).",
+                relatedStep: 4
+            }
+        ];
+
+        let currentTrainerQ = null;
+        let lastQIndex = -1;
+        let questionsAnswered = 0;
+        let trainerAttempts = 0;
+
+        function nextTrainerQuestion() {
+            document.getElementById('trainer-feedback').classList.add('hidden');
+            document.getElementById('btn-next-trainer').style.display = 'none';
+            document.getElementById('btn-check-trainer').style.display = 'block';
+            trainerAttempts = 0;
+
+            let nextIdx;
+            do {
+                nextIdx = Math.floor(Math.random() * trainerQuestions.length);
+            } while (nextIdx === lastQIndex);
+            
+            lastQIndex = nextIdx;
+            currentTrainerQ = trainerQuestions[nextIdx];
+
+            document.getElementById('trainer-q-text').innerHTML = currentTrainerQ.q;
+            
+            const optsContainer = document.getElementById('trainer-options');
+            optsContainer.innerHTML = '';
+            
+            currentTrainerQ.options.forEach((opt, idx) => {
+                const label = document.createElement('label');
+                label.className = "flex items-start gap-3 p-3 bg-white hover:bg-slate-50 rounded shadow-sm cursor-pointer border border-slate-200 transition-colors";
+                label.innerHTML = `
+                    <input type="checkbox" value="${idx}" class="mt-1 w-5 h-5 text-cyan-600 focus:ring-cyan-500 border-gray-300 rounded">
+                    <span class="text-slate-700">${opt}</span>
+                `;
+                optsContainer.appendChild(label);
+            });
+        }
+
+        function checkTrainer() {
+            if (!currentTrainerQ) return;
+            const boxes = Array.from(document.querySelectorAll('#trainer-options input'));
+            const selected = boxes.map((b, i) => b.checked ? i : -1).filter(i => i !== -1);
+            
+            const isCorrect = selected.length === currentTrainerQ.correct.length && 
+                              selected.every(val => currentTrainerQ.correct.includes(val));
+
+            const fb = document.getElementById('trainer-feedback');
+            fb.classList.remove('hidden');
+
+            if (isCorrect) {
+                questionsAnswered++;
+                document.getElementById('trainer-counter').innerText = `Fragen gelöst: ${questionsAnswered}`;
+                
+                fb.className = "mb-4 p-4 rounded text-sm bg-green-100 text-green-800 border border-green-300";
+                fb.innerHTML = `<strong>Richtig!</strong> ${currentTrainerQ.explanation}`;
+                document.getElementById('btn-check-trainer').style.display = 'none';
+                document.getElementById('btn-next-trainer').style.display = 'block';
+            } else {
+                trainerAttempts++;
+                fb.className = "mb-4 p-4 rounded text-sm bg-red-100 text-red-800 border border-red-300 animate-pulse";
+                let errorHtml = `<strong>Das war leider nicht ganz richtig.</strong> Überprüfe deine Auswahl nochmal! Denke daran: Es können immer mehrere Antworten stimmen.`;
+                
+                errorHtml += `<div class="mt-4 pt-4 border-t border-red-200 text-center flex flex-col gap-2">
+                    <button type="button" onclick="goToStep(${currentTrainerQ.relatedStep})" class="bg-white hover:bg-slate-50 text-cyan-700 border border-cyan-300 font-semibold py-2 px-4 rounded shadow-sm transition">
+                        📖 Zu schwierig? Kapitel ${currentTrainerQ.relatedStep} nochmal ansehen
+                    </button>`;
+
+                if (trainerAttempts >= 2) {
+                    errorHtml += `
+                        <button type="button" onclick="solveTrainer()" class="bg-red-200 hover:bg-red-300 text-red-900 font-semibold py-2 px-4 rounded shadow-sm transition">
+                            💡 Ich komme nicht drauf – Lösung anzeigen
+                        </button>`;
+                }
+                
+                errorHtml += `</div>`;
+                fb.innerHTML = errorHtml;
+            }
+        }
+
+        function solveTrainer() {
+            const boxes = Array.from(document.querySelectorAll('#trainer-options input'));
+            boxes.forEach((b, i) => {
+                b.checked = currentTrainerQ.correct.includes(i);
+            });
+            checkTrainer(); // Führt die Erfolgs-Logik aus
+        }
+
+        // --- Init ---
+        initRegionsAndFences();
+        updateRegionsAndFences();
+        drawTangent();
+        renderNav();
+
+    </script>
+</body>
+</html>
